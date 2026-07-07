@@ -1,0 +1,264 @@
+@page "/"
+@using FiaeMemory.Models
+@using FiaeMemory.Services
+@using FiaeMemory.Components
+@inject GameService GameSvc
+@inject HighscoreService HighscoreSvc
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>FIAE Memory – IHK Lernspiel</PageTitle>
+
+@if (_phase == AppPhase.Menu)
+{
+    <div class="menu-container">
+        <div class="menu-card">
+            <div class="menu-logo">🎓</div>
+            <h1 class="menu-title">FIAE Memory</h1>
+            <p class="menu-subtitle">IHK-Prüfungsvorbereitung für Fachinformatiker:innen</p>
+
+            <div class="form-group">
+                <label class="form-label">Kategorie</label>
+                <select class="form-select" @bind="_selectedCategory">
+                    @foreach (var cat in CardRepository.Categories)
+                    {
+                        <option value="@cat">@cat</option>
+                    }
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Anzahl Kartenpaare: <strong>@_pairCount</strong></label>
+                <input type="range" class="form-range" min="4" max="20" step="2" @bind="_pairCount" @bind:event="oninput" />
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Spielername</label>
+                <input class="form-input" type="text" placeholder="Dein Name..." @bind="_playerName" maxlength="20" />
+            </div>
+
+            <button class="btn btn-primary btn-large" @onclick="StartGame" disabled="@string.IsNullOrWhiteSpace(_playerName)">
+                🚀 Spiel starten
+            </button>
+            <button class="btn btn-secondary" @onclick="() => { _phase = AppPhase.Highscore; RefreshScores(); }">
+                🏆 Highscores
+            </button>
+        </div>
+    </div>
+}
+else if (_phase == AppPhase.Playing)
+{
+    <div class="game-container">
+        <div class="game-header">
+            <div class="stat-box">
+                <span class="stat-label">⏱️ Zeit</span>
+                <span class="stat-value">@FormatTime(GameSvc.State.ElapsedTime)</span>
+            </div>
+            <div class="stat-box">
+                <span class="stat-label">🃏 Züge</span>
+                <span class="stat-value">@GameSvc.State.Moves</span>
+            </div>
+            <div class="stat-box">
+                <span class="stat-label">✅ Paare</span>
+                <span class="stat-value">@GameSvc.State.MatchedPairs / @GameSvc.State.TotalPairs</span>
+            </div>
+            <div class="stat-box hidden-sm">
+                <span class="stat-label">📚 @_selectedCategory</span>
+            </div>
+            <button class="btn btn-sm btn-secondary" @onclick="BackToMenu">← Menü</button>
+        </div>
+
+        <div class="progress-bar-outer">
+            <div class="progress-bar-inner" style="width: @(GameSvc.State.TotalPairs > 0 ? (GameSvc.State.MatchedPairs * 100.0 / GameSvc.State.TotalPairs).ToString("F0") : "0")%"></div>
+        </div>
+
+        <div class="card-grid cols-@GetGridCols()">
+            @foreach (var card in GameSvc.State.Cards)
+            {
+                <MemoryCardComponent Card="card" OnCardClicked="HandleCardClick" />
+            }
+        </div>
+
+        @if (GameSvc.State.IsComplete)
+        {
+            <div class="overlay">
+                <div class="win-panel">
+                    <div class="win-emoji">🎉</div>
+                    <h2>Geschafft!</h2>
+                    <p>Zeit: <strong>@FormatTime(GameSvc.State.ElapsedTime)</strong></p>
+                    <p>Züge: <strong>@GameSvc.State.Moves</strong></p>
+                    <p class="score-display">Punkte: <strong>@_finalScore</strong></p>
+                    <button class="btn btn-primary" @onclick="PlayAgain">🔄 Nochmal</button>
+                    <button class="btn btn-secondary" @onclick="BackToMenu">🏠 Menü</button>
+                    <button class="btn btn-gold" @onclick="() => { _phase = AppPhase.Highscore; RefreshScores(); }">🏆 Highscores</button>
+                </div>
+            </div>
+        }
+    </div>
+}
+else if (_phase == AppPhase.Highscore)
+{
+    <div class="highscore-container">
+        <div class="highscore-card">
+            <h2>🏆 Highscores</h2>
+
+            <div class="form-group">
+                <select class="form-select" @bind="_filterCategory" @bind:after="RefreshScores">
+                    @foreach (var cat in CardRepository.Categories)
+                    {
+                        <option value="@cat">@cat</option>
+                    }
+                </select>
+            </div>
+
+            @if (_topScores.Any())
+            {
+                <table class="score-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Name</th>
+                            <th>Punkte</th>
+                            <th>Züge</th>
+                            <th>Zeit</th>
+                            <th>Kategorie</th>
+                            <th>Datum</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var (entry, idx) in _topScores.Select((e, i) => (e, i + 1)))
+                        {
+                            <tr class="@(idx == 1 ? "gold" : idx == 2 ? "silver" : idx == 3 ? "bronze" : "")">
+                                <td>@(idx == 1 ? "🥇" : idx == 2 ? "🥈" : idx == 3 ? "🥉" : idx.ToString())</td>
+                                <td>@entry.PlayerName</td>
+                                <td><strong>@entry.Score</strong></td>
+                                <td>@entry.Moves</td>
+                                <td>@FormatTime(entry.Duration)</td>
+                                <td>@entry.Category</td>
+                                <td>@entry.PlayedAt.ToString("dd.MM.yy HH:mm")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <p class="no-scores">Noch keine Highscores. Spiel erst eine Runde!</p>
+            }
+
+            <div class="btn-row">
+                <button class="btn btn-primary" @onclick="BackToMenu">← Menü</button>
+                <button class="btn btn-danger" @onclick="ClearHighscores">🗑️ Löschen</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private enum AppPhase { Menu, Playing, Highscore }
+    private AppPhase _phase = AppPhase.Menu;
+    private string _selectedCategory = "Alle";
+    private int _pairCount = 8;
+    private string _playerName = string.Empty;
+    private string _filterCategory = "Alle";
+    private List<HighscoreEntry> _topScores = new();
+    private int _finalScore;
+    private System.Threading.Timer? _timer;
+    private bool _scoreSaved;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await HighscoreSvc.LoadAsync();
+        GameSvc.OnStateChanged += HandleStateChanged;
+    }
+
+    private void HandleStateChanged()
+    {
+        InvokeAsync(async () =>
+        {
+            StateHasChanged();
+            if (GameSvc.State.IsComplete && !_scoreSaved)
+            {
+                _scoreSaved = true;
+                StopTimer();
+                var entry = new HighscoreEntry
+                {
+                    PlayerName = _playerName,
+                    Moves = GameSvc.State.Moves,
+                    Duration = GameSvc.State.ElapsedTime,
+                    CardCount = GameSvc.State.TotalPairs,
+                    Category = _selectedCategory
+                };
+                _finalScore = entry.Score;
+                await HighscoreSvc.AddScoreAsync(entry);
+            }
+        });
+    }
+
+    private void StartGame()
+    {
+        _scoreSaved = false;
+        GameSvc.StartGame(_selectedCategory, _pairCount);
+        _phase = AppPhase.Playing;
+        StartTimer();
+    }
+
+    private void PlayAgain()
+    {
+        _scoreSaved = false;
+        GameSvc.StartGame(_selectedCategory, _pairCount);
+        StartTimer();
+    }
+
+    private async Task HandleCardClick(MemoryCard card)
+    {
+        await GameSvc.SelectCard(card);
+    }
+
+    private void StartTimer()
+    {
+        StopTimer();
+        _timer = new System.Threading.Timer(_ =>
+        {
+            GameSvc.UpdateTimer();
+        }, null, 0, 1000);
+    }
+
+    private void StopTimer()
+    {
+        _timer?.Dispose();
+        _timer = null;
+    }
+
+    private void BackToMenu()
+    {
+        StopTimer();
+        _phase = AppPhase.Menu;
+    }
+
+    private void RefreshScores()
+    {
+        _topScores = HighscoreSvc.GetTopScores(_filterCategory);
+    }
+
+    private async Task ClearHighscores()
+    {
+        await HighscoreSvc.ClearAsync();
+        RefreshScores();
+    }
+
+    private static string FormatTime(TimeSpan t) =>
+        $"{(int)t.TotalMinutes:D2}:{t.Seconds:D2}";
+
+    private int GetGridCols()
+    {
+        var total = GameSvc.State.Cards.Count;
+        return total <= 8 ? 4 : 5;
+    }
+
+    public void Dispose()
+    {
+        StopTimer();
+        GameSvc.OnStateChanged -= HandleStateChanged;
+    }
+}

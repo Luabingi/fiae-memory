@@ -1,0 +1,29 @@
+@using FiaeMemory.Models
+
+<div class="card-wrapper @(Card.IsMatched ? "matched" : "") @(Card.IsShaking ? "shake" : "")" @onclick="OnClick">
+    <div class="card-inner @(Card.IsFaceUp || Card.IsMatched ? "flipped" : "")">
+        <div class="card-face card-back">
+            <div class="card-back-content">
+                <span class="card-icon">🎓</span>
+                <span class="card-label">FIAE</span>
+            </div>
+        </div>
+        <div class="card-face card-front @(Card.Type == CardType.Question ? "question-card" : "answer-card")">
+            <div class="card-type-badge">
+                @(Card.Type == CardType.Question ? "❓ Begriff" : "✅ Antwort")
+            </div>
+            <div class="card-content">@Card.Content</div>
+            <div class="card-category">@Card.Category</div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MemoryCard Card { get; set; } = default!;
+    [Parameter] public EventCallback<MemoryCard> OnCardClicked { get; set; }
+
+    private async Task OnClick()
+    {
+        await OnCardClicked.InvokeAsync(Card);
+    }
+}
